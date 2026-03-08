@@ -166,6 +166,11 @@ async def extract_product_data(
                 product_data = json.loads(content)
                 product_data["raw_url"] = url
 
+                # Coerce null to empty string for required string fields
+                for field in ("product_name", "brand_name", "description", "price", "category"):
+                    if product_data.get(field) is None:
+                        product_data[field] = ""
+
                 return ScrapeResponse(**product_data)
 
             except (json.JSONDecodeError, KeyError, TypeError) as e:
