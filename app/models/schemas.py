@@ -19,6 +19,12 @@ class ScrapeResponse(BaseModel):
     target_audience: str | None = None
     ingredients: str | None = None
     specs: dict[str, str] | None = None
+    currency_code: str | None = None
+    sku: str | None = None
+    availability: str | None = None
+    rating: float | None = None
+    review_count: int | None = None
+    price_original: str | None = None
 
 
 class ErrorResponse(BaseModel):

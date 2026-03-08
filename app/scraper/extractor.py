@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -16,22 +17,36 @@ You are a product data extraction system. You receive pre-parsed webpage data (m
 
 DATA SOURCE PRIORITY (most to least reliable):
 1. JSON-LD — structured data embedded by the site; use as primary source for name, brand, price, description, images
-2. Open Graph tags — reliable for title, description, primary image
-3. Meta description — often a clean product summary
-4. Page text — richest source but noisiest; use for benefits, specs, ingredients, and anything missing from sources above
-5. Image URLs — filter heavily; most are not product images
+2. Microdata — schema.org itemprop attributes; reliable for sku, brand, price, rating, availability
+3. Open Graph tags — reliable for title, description, primary image
+4. Twitter Card tags — fallback for title, description, image
+5. Meta description — often a clean product summary
+6. Page text — richest source but noisiest; use for benefits, specs, ingredients, and anything missing from sources above
+7. Image URLs — filter heavily; most are not product images
 
 EXTRACTION RULES:
 
 product_name — The full product name as a customer would recognize it. Do not include the brand name as a prefix unless it is part of the official product name. Do not include promotional text ("NEW!", "Best Seller", "Sale"). Prefer JSON-LD "name" field when available.
 
-brand_name — The manufacturer or brand. Check JSON-LD "brand" field first, then OG site_name, then infer from page content. If genuinely unidentifiable, return empty string.
+brand_name — The manufacturer or brand. Check JSON-LD "brand" field first, then microdata "brand", then OG site_name, then infer from page content. If genuinely unidentifiable, return empty string.
 
 description — A concise 2-4 sentence summary capturing what the product is, what it does, and why someone would buy it. Write in the same language as the source page. Do not copy marketing fluff verbatim — distill the actual value proposition.
 
 key_benefits — 3-7 specific, concrete benefits. Extract from bullet points, feature lists, or product description. Each benefit should be a short phrase, not a full sentence. If the page lists no explicit benefits, infer the most important ones from features and description. Never pad with generic filler ("High quality", "Great value").
 
 price — The current selling price including currency symbol, exactly as displayed (e.g., "$29.99", "49,90 EUR"). If there is a sale/discount, use the discounted price. If price is a range, use the starting price with a "from" prefix (e.g., "from $19.99"). If free, return "Free". If no price is found on the page, return empty string.
+
+price_original — The original price before any discount or sale, including currency symbol (e.g., "$39.99"). Return null if there is no discount or if the original price is the same as the current price.
+
+currency_code — ISO 4217 currency code (e.g., "USD", "EUR", "GBP"). Extract from JSON-LD priceCurrency, microdata priceCurrency, or infer from the currency symbol in the price. Return null if not determinable.
+
+sku — The product's SKU, MPN, or primary identifier code. Check JSON-LD "sku" or "mpn", microdata "sku", or product detail sections. Return null if not found.
+
+availability — Product availability status. Use one of: "InStock", "OutOfStock", "PreOrder", "BackOrder", "LimitedAvailability". Check JSON-LD "availability" or microdata "availability" first. Return null if not determinable.
+
+rating — Numeric average rating (e.g., 4.5). Check JSON-LD "aggregateRating.ratingValue" or microdata "ratingValue". Return null if no rating exists.
+
+review_count — Total number of reviews as an integer. Check JSON-LD "aggregateRating.reviewCount" or microdata "reviewCount". Return null if not available.
 
 product_images — URLs of actual product photos only. Maximum 10. Exclude: logos, icons, banners, UI elements, payment badges, social media icons, decorative graphics, tracking pixels. When the same image appears in multiple sizes, keep only the largest version. Prefer images from JSON-LD "image" field.
 
@@ -48,10 +63,10 @@ CRITICAL CONSTRAINTS:
 - Return ONLY the JSON object. No markdown fences, no explanation, no commentary.
 - All string values must be properly escaped for valid JSON.
 - If the page is not a product page (category listing, blog post, homepage, error page), return JSON with product_name set to empty string.
-- For required string fields with no data, use empty string. For optional fields (target_audience, ingredients, specs), use null.
+- For required string fields with no data, use empty string. For optional fields, use null.
 
 REQUIRED JSON STRUCTURE:
-{"product_name": string, "brand_name": string, "description": string, "key_benefits": [string, ...], "price": string, "product_images": [string, ...], "category": string, "target_audience": string or null, "ingredients": string or null, "specs": {"key": "value", ...} or null}"""
+{"product_name": string, "brand_name": string, "description": string, "key_benefits": [string, ...], "price": string, "price_original": string or null, "currency_code": string or null, "sku": string or null, "availability": string or null, "rating": number or null, "review_count": integer or null, "product_images": [string, ...], "category": string, "target_audience": string or null, "ingredients": string or null, "specs": {"key": "value", ...} or null}"""
 
 
 def _build_user_message(parsed: ParsedPage, url: str) -> str:
@@ -67,6 +82,9 @@ def _build_user_message(parsed: ParsedPage, url: str) -> str:
     if parsed.og_tags:
         parts.append(f"Open Graph Tags:\n{json.dumps(parsed.og_tags, indent=2)}")
 
+    if parsed.twitter_tags:
+        parts.append(f"Twitter Card Tags:\n{json.dumps(parsed.twitter_tags, indent=2)}")
+
     if parsed.json_ld:
         json_ld_str = json.dumps(parsed.json_ld, indent=2, default=str)
         # Truncate JSON-LD if too large
@@ -74,8 +92,11 @@ def _build_user_message(parsed: ParsedPage, url: str) -> str:
             json_ld_str = json_ld_str[:5000] + "\n[...truncated]"
         parts.append(f"JSON-LD Data:\n{json_ld_str}")
 
+    if parsed.microdata:
+        parts.append(f"Microdata (schema.org):\n{json.dumps(parsed.microdata, indent=2)}")
+
     if parsed.image_urls:
-        parts.append(f"Image URLs:\n" + "\n".join(parsed.image_urls[:30]))
+        parts.append(f"Image URLs:\n" + "\n".join(parsed.image_urls[:15]))
 
     parts.append(f"Page Text:\n{parsed.cleaned_text}")
 
@@ -116,6 +137,19 @@ async def extract_product_data(
                     headers=headers,
                     json=payload,
                 )
+
+                # Exponential backoff on 429 or 5xx
+                if response.status_code == 429 or response.status_code >= 500:
+                    delay = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                    logger.warning(
+                        "Attempt %d: HTTP %d from OpenRouter, retrying in %ds",
+                        attempt + 1,
+                        response.status_code,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
                 response.raise_for_status()
 
                 data = response.json()
@@ -136,10 +170,13 @@ async def extract_product_data(
 
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 last_error = e
+                # Log the raw LLM response for debugging
+                raw = content if "content" in dir() else "(no content)"
                 logger.warning(
-                    "Attempt %d: Failed to parse LLM response: %s",
+                    "Attempt %d: Failed to parse LLM response: %s\nRaw response: %.500s",
                     attempt + 1,
                     e,
+                    raw,
                 )
                 continue
             except httpx.HTTPStatusError as e:

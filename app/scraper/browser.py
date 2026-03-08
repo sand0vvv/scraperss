@@ -1,6 +1,8 @@
+import asyncio
 import logging
 
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 from app.config import settings
 
@@ -14,7 +16,10 @@ class BrowserError(Exception):
 async def fetch_page(url: str) -> dict[str, str]:
     """Load a URL with headless Chromium and return rendered HTML + page title."""
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
         try:
             context = await browser.new_context(
                 user_agent=(
@@ -23,14 +28,35 @@ async def fetch_page(url: str) -> dict[str, str]:
                     "Chrome/131.0.0.0 Safari/537.36"
                 ),
                 viewport={"width": 1280, "height": 720},
+                extra_http_headers={
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "none",
+                    "Sec-Fetch-User": "?1",
+                    "Upgrade-Insecure-Requests": "1",
+                },
             )
             page = await context.new_page()
 
+            # Apply stealth patches to avoid bot detection
+            await stealth_async(page)
+
+            # Backup: patch navigator.webdriver property
+            await page.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
+
             response = await page.goto(
                 url,
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=settings.browser_timeout,
             )
+
+            # Wait for JS rendering after DOM is ready
+            await asyncio.sleep(2)
 
             if response is None:
                 raise BrowserError(f"No response received from {url}")

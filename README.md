@@ -106,6 +106,12 @@ Scrape a product page and return structured data.
     "Reduces appearance of excess oil"
   ],
   "price": "$6.00",
+  "price_original": null,
+  "currency_code": "USD",
+  "sku": "100436",
+  "availability": "InStock",
+  "rating": 4.5,
+  "review_count": 1234,
   "product_images": [
     "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dwce8a7cdf/Images/products/The%20Ordinary/rdn-niacinamide-10pct-zinc-1pct-30ml.png?sw=900&sh=900&sm=fit"
   ],
@@ -146,6 +152,12 @@ Scrape a product page and return structured data.
 | `target_audience` | `string \| null` | No | Target audience, if identifiable |
 | `ingredients` | `string \| null` | No | Ingredients list (food, cosmetics, supplements) |
 | `specs` | `object \| null` | No | Technical specifications as key-value pairs |
+| `currency_code` | `string \| null` | No | ISO 4217 currency code (e.g., `"USD"`, `"EUR"`) |
+| `sku` | `string \| null` | No | Product SKU or identifier |
+| `availability` | `string \| null` | No | Stock status: `InStock`, `OutOfStock`, `PreOrder`, `BackOrder`, `LimitedAvailability` |
+| `rating` | `number \| null` | No | Average rating (e.g., `4.5`) |
+| `review_count` | `integer \| null` | No | Total number of reviews |
+| `price_original` | `string \| null` | No | Original price before discount (e.g., `"$39.99"`) |
 
 ## Configuration
 
@@ -156,7 +168,7 @@ All settings are configured via environment variables (or `.env` file):
 | `OPENROUTER_API_KEY` | Yes | — | Your [OpenRouter](https://openrouter.ai) API key |
 | `LLM_MODEL` | No | `google/gemini-2.5-flash-lite` | OpenRouter model ID ([browse models](https://openrouter.ai/models)) |
 | `LLM_MAX_TOKENS` | No | `4096` | Maximum tokens for LLM response |
-| `BROWSER_TIMEOUT` | No | `30000` | Page load timeout in milliseconds |
+| `BROWSER_TIMEOUT` | No | `45000` | Page load timeout in milliseconds |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8080` | Server port |
 
@@ -176,18 +188,20 @@ All settings are configured via environment variables (or `.env` file):
 The extraction prompt uses a **source priority system** to maximize accuracy:
 
 1. **JSON-LD** (highest priority) — structured data embedded by the site; most reliable for name, brand, price
-2. **Open Graph tags** — reliable for title, description, primary image
-3. **Meta description** — often contains a clean product summary
-4. **Page text** (lowest priority) — richest but noisiest source; used for benefits, specs, and filling gaps
+2. **Microdata** — schema.org `itemprop` attributes; reliable for SKU, brand, rating, availability
+3. **Open Graph tags** — reliable for title, description, primary image
+4. **Twitter Card tags** — fallback for title, description, image
+5. **Meta description** — often contains a clean product summary
+6. **Page text** (lowest priority) — richest but noisiest source; used for benefits, specs, and filling gaps
 
 ### HTML Cleaning
 
 Before sending to the LLM, HTML is processed to reduce noise and token usage:
 - Scripts, styles, navigation, headers, and footers are removed
 - Text is extracted and deduplicated
-- Content is truncated to ~15,000 characters
+- Content is truncated to ~40,000 characters
 - JSON-LD is capped at 5,000 characters
-- Image URLs are deduplicated and limited to 30
+- Image URLs are deduplicated, noise-filtered (logos, icons, trackers excluded), and limited to 15
 
 ### Error Handling
 
@@ -197,8 +211,8 @@ Before sending to the LLM, HTML is processed to reduce noise and token usage:
 
 ## Limitations
 
-- **Bot detection** — Some sites (Amazon, Nike, Target) may block headless browsers or return CAPTCHAs. Sites with lighter protection (Shopify stores, DTC brands, Google Store) work reliably.
-- **Heavy pages** — Sites that never reach `networkidle` state (continuous background requests) may timeout. Increase `BROWSER_TIMEOUT` if needed.
+- **Bot detection** — Anti-detection measures (stealth mode, realistic headers) handle most sites, but some heavily protected sites may still block or return CAPTCHAs.
+- **Heavy pages** — Uses `domcontentloaded` wait strategy with a short JS rendering delay; most pages load within the 45s default timeout.
 - **Rate limits** — Free OpenRouter models are limited to ~20 requests/minute and 200 requests/day.
 - **Accuracy** — LLM extraction is not 100% deterministic. Edge cases (multi-variant products, bundle pages, non-standard layouts) may produce imperfect results.
 
