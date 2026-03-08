@@ -12,38 +12,46 @@ logger = logging.getLogger(__name__)
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 EXTRACTION_PROMPT = """\
-You are a product data extraction specialist. Your task: extract structured product information from the provided webpage data and return it as a JSON object.
+You are a product data extraction system. You receive pre-parsed webpage data (metadata, structured data, images, text) and return a single JSON object with product information.
 
-You will receive:
-- Page title
-- Meta description
-- Open Graph tags
-- JSON-LD structured data (if available)
-- Image URLs found on the page
-- Cleaned page text
+DATA SOURCE PRIORITY (most to least reliable):
+1. JSON-LD — structured data embedded by the site; use as primary source for name, brand, price, description, images
+2. Open Graph tags — reliable for title, description, primary image
+3. Meta description — often a clean product summary
+4. Page text — richest source but noisiest; use for benefits, specs, ingredients, and anything missing from sources above
+5. Image URLs — filter heavily; most are not product images
 
-Return ONLY a valid JSON object with these fields:
+EXTRACTION RULES:
 
-{
-  "product_name": "Full product name as displayed on the page",
-  "brand_name": "Brand or manufacturer name",
-  "description": "Product description — concise summary (2-4 sentences). Capture the essence of what the product is and what it does.",
-  "key_benefits": ["Benefit 1", "Benefit 2", ...],
-  "price": "Price as shown on the page, including currency symbol (e.g., '$29.99'). Use empty string if not found.",
-  "product_images": ["url1", "url2", ...],
-  "category": "Product category (e.g., 'Electronics', 'Skincare', 'Kitchen Appliance')",
-  "target_audience": "Who this product is for, or null if unclear",
-  "ingredients": "Ingredients list or key specs as a string, or null if not applicable",
-  "specs": {"key": "value"} or null if no specs found
-}
+product_name — The full product name as a customer would recognize it. Do not include the brand name as a prefix unless it is part of the official product name. Do not include promotional text ("NEW!", "Best Seller", "Sale"). Prefer JSON-LD "name" field when available.
 
-Rules:
-- Extract ONLY information present on the page. Never invent or hallucinate data.
-- For product_images: select only product-relevant images. Exclude icons, logos, banners, UI elements. Prefer high-resolution images. Maximum 10 images.
-- For key_benefits: extract 3-7 concrete benefits. If not explicitly listed, infer from description/features.
-- For price: include the primary/current price. If there's a sale, use the sale price.
-- If a field cannot be determined from the page, use empty string for strings and empty array for lists.
-- Return raw JSON only — no markdown, no explanation, no code fences."""
+brand_name — The manufacturer or brand. Check JSON-LD "brand" field first, then OG site_name, then infer from page content. If genuinely unidentifiable, return empty string.
+
+description — A concise 2-4 sentence summary capturing what the product is, what it does, and why someone would buy it. Write in the same language as the source page. Do not copy marketing fluff verbatim — distill the actual value proposition.
+
+key_benefits — 3-7 specific, concrete benefits. Extract from bullet points, feature lists, or product description. Each benefit should be a short phrase, not a full sentence. If the page lists no explicit benefits, infer the most important ones from features and description. Never pad with generic filler ("High quality", "Great value").
+
+price — The current selling price including currency symbol, exactly as displayed (e.g., "$29.99", "49,90 EUR"). If there is a sale/discount, use the discounted price. If price is a range, use the starting price with a "from" prefix (e.g., "from $19.99"). If free, return "Free". If no price is found on the page, return empty string.
+
+product_images — URLs of actual product photos only. Maximum 10. Exclude: logos, icons, banners, UI elements, payment badges, social media icons, decorative graphics, tracking pixels. When the same image appears in multiple sizes, keep only the largest version. Prefer images from JSON-LD "image" field.
+
+category — A specific product category describing what this item IS, at the level a shopper would use (e.g., "Wireless Headphones", "Face Moisturizer", "Running Shoes", "Espresso Machine"). Not too broad ("Electronics") and not too narrow.
+
+target_audience — Who this product is designed for, if the page makes it clear (e.g., "professional photographers", "people with sensitive skin"). Return null if the page does not indicate a specific audience.
+
+ingredients — Ingredients or composition list as a single string, applicable to food, cosmetics, supplements, and similar products. Return null for products where ingredients do not apply (electronics, clothing, furniture, etc.). Do not put technical specs or materials here.
+
+specs — Key technical specifications as a flat object with string keys and string values. Extract from spec tables, feature lists, or product details sections. Include dimensions, weight, materials, compatibility, capacity, and similar factual attributes. Return null if no specs are found.
+
+CRITICAL CONSTRAINTS:
+- Extract ONLY information present on the page. Never fabricate data.
+- Return ONLY the JSON object. No markdown fences, no explanation, no commentary.
+- All string values must be properly escaped for valid JSON.
+- If the page is not a product page (category listing, blog post, homepage, error page), return JSON with product_name set to empty string.
+- For required string fields with no data, use empty string. For optional fields (target_audience, ingredients, specs), use null.
+
+REQUIRED JSON STRUCTURE:
+{"product_name": string, "brand_name": string, "description": string, "key_benefits": [string, ...], "price": string, "product_images": [string, ...], "category": string, "target_audience": string or null, "ingredients": string or null, "specs": {"key": "value", ...} or null}"""
 
 
 def _build_user_message(parsed: ParsedPage, url: str) -> str:
@@ -95,6 +103,7 @@ async def extract_product_data(
             {"role": "user", "content": user_message},
         ],
         "temperature": 0.1,
+        "response_format": {"type": "json_object"},
     }
 
     last_error: Exception | None = None
