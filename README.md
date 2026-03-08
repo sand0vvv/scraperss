@@ -8,20 +8,32 @@ Standalone microservice that accepts any product page URL and returns structured
 URL → Playwright (headless Chromium) → BeautifulSoup (HTML parsing) → LLM (structured extraction) → Pydantic (validation) → JSON
 ```
 
-1. **Browser rendering** — Playwright loads the page with headless Chromium, executing JavaScript to handle SPAs and dynamically-rendered content
-2. **HTML parsing** — BeautifulSoup extracts structured data from multiple sources: JSON-LD, Open Graph meta tags, `<meta>` descriptions, image URLs, and cleaned page text
-3. **LLM extraction** — Parsed data is sent to an LLM (via OpenRouter API) with a specialized prompt that prioritizes reliable data sources (JSON-LD > OG tags > meta > page text)
+1. **Browser rendering** — Playwright loads the page with headless Chromium (stealth mode, anti-detection), executing JavaScript to handle SPAs and dynamically-rendered content
+2. **HTML parsing** — BeautifulSoup extracts structured data from multiple sources: JSON-LD, microdata, Open Graph, Twitter Card, meta tags, images, and cleaned page text
+3. **LLM extraction** — Parsed data is sent to Gemini 3 Flash (via OpenRouter API) with a specialized prompt that prioritizes reliable data sources
 4. **Validation** — Pydantic v2 validates the LLM response against a strict schema before returning
 
 ## Tech Stack
 
 - **Python 3.11+**
 - **FastAPI** + **Uvicorn** — async web framework
-- **Playwright** — headless Chromium for page rendering
+- **Playwright** + **playwright-stealth** — headless Chromium with anti-detection
 - **BeautifulSoup4** + **lxml** — HTML parsing
-- **OpenRouter API** — LLM provider (supports any model: Gemini, Claude, Llama, etc.)
+- **OpenRouter API** (Gemini 3 Flash) — LLM-powered data extraction
 - **Pydantic v2** — response validation
 - **Docker** — containerized deployment
+
+## LLM Model
+
+The default model is **Google Gemini 3 Flash** (`google/gemini-3-flash-preview`).
+
+We tested three models (Gemini 2.5 Flash Lite, Claude Haiku 4.5, Gemini 3 Flash) across diverse product pages (The Ordinary, Gymshark, Amazon, Google Store). Gemini 3 Flash had the best price-to-quality ratio:
+
+- **Accurate extraction** — correctly extracts prices on Amazon (other models failed), proper category classification ("Facial Serum" not "Face Moisturizer"), concise specs within limits
+- **Fast** — low latency via OpenRouter
+- **Affordable** — ~$0.50 input / $3.00 output per 1M tokens. At beta volume (1-5 URLs/day), the cost is negligible
+
+The model can be changed via the `LLM_MODEL` environment variable if needed.
 
 ## Project Structure
 
@@ -30,8 +42,8 @@ app/
 ├── main.py              # FastAPI application, endpoint definitions
 ├── config.py            # Environment-based configuration (Pydantic Settings)
 ├── scraper/
-│   ├── browser.py       # Playwright: page loading, HTML retrieval
-│   ├── parser.py        # BeautifulSoup: meta tags, JSON-LD, images, text extraction
+│   ├── browser.py       # Playwright: page loading with stealth/anti-detection
+│   ├── parser.py        # BeautifulSoup: meta tags, JSON-LD, microdata, images, text
 │   └── extractor.py     # LLM prompt and OpenRouter API integration
 └── models/
     └── schemas.py       # Pydantic models for request/response validation
@@ -96,30 +108,37 @@ Scrape a product page and return structured data.
 {
   "product_name": "Niacinamide 10% + Zinc 1%",
   "brand_name": "The Ordinary",
-  "description": "A universal serum for blemish-prone skin that smooths, brightens, and supports. This formula helps to reduce the appearance of blemishes, congestion, and excess oil.",
+  "description": "A universal serum for blemish-prone skin that smooths, brightens, and supports. It improves skin smoothness and reinforces the skin barrier for a more radiant complexion.",
   "key_benefits": [
-    "Improves skin smoothness",
+    "Improves skin brightness",
+    "Smooths skin texture",
     "Reinforces skin barrier",
-    "Radiant complexion",
-    "Reduces appearance of blemishes",
-    "Reduces appearance of congestion",
-    "Reduces appearance of excess oil"
+    "Supports blemish-prone skin",
+    "Universal formulation"
   ],
   "price": "$6.00",
   "price_original": null,
   "currency_code": "USD",
-  "sku": "100436",
+  "sku": "rdn-niacinamide-10pct-zinc-1pct-30ml",
   "availability": "InStock",
-  "rating": 4.5,
-  "review_count": 1234,
+  "rating": null,
+  "review_count": null,
   "product_images": [
-    "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dwce8a7cdf/Images/products/The%20Ordinary/rdn-niacinamide-10pct-zinc-1pct-30ml.png?sw=900&sh=900&sm=fit"
+    "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dwce8a7cdf/Images/products/The%20Ordinary/rdn-niacinamide-10pct-zinc-1pct-30ml.png",
+    "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dw51b196c5/Images/products/The%20Ordinary/application/ord-niacinamide-10-zic-1-model-application-with-benefits.jpg",
+    "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dwbf9b60a4/Images/products/The%20Ordinary/infographics/ord-niacainamide-zinc-blemish-serum-benefits-graphic.jpg"
   ],
-  "category": "Serum",
+  "category": "Facial Serum",
   "raw_url": "https://theordinary.com/en-us/niacinamide-10-zinc-1-serum-100436.html",
-  "target_audience": null,
-  "ingredients": null,
-  "specs": null
+  "target_audience": "people with blemish-prone skin",
+  "ingredients": "Niacinamide, Zinc PCA",
+  "specs": {
+    "Size": "30ml",
+    "Format": "Water-based Serum",
+    "Key Ingredients": "Niacinamide 10%, Zinc 1%",
+    "Skin Type": "All Skin Types",
+    "pH": "5.00 - 6.50"
+  }
 }
 ```
 
@@ -146,12 +165,12 @@ Scrape a product page and return structured data.
 | `description` | `string` | Yes | Concise 2-4 sentence summary |
 | `key_benefits` | `string[]` | Yes | 3-7 concrete product benefits |
 | `price` | `string` | Yes | Price with currency symbol (e.g., `"$29.99"`, `"from $19.99"`) or empty string |
-| `product_images` | `string[]` | Yes | Up to 10 product photo URLs (no icons/logos) |
-| `category` | `string` | Yes | Product category (e.g., `"Smartphone"`, `"Face Moisturizer"`) |
+| `product_images` | `string[]` | Yes | 2-3 best product photo URLs (no icons/logos) |
+| `category` | `string` | Yes | Product category (e.g., `"Facial Serum"`, `"Training T-Shirt"`) |
 | `raw_url` | `string` | Yes | The original URL that was scraped |
 | `target_audience` | `string \| null` | No | Target audience, if identifiable |
-| `ingredients` | `string \| null` | No | Ingredients list (food, cosmetics, supplements) |
-| `specs` | `object \| null` | No | Technical specifications as key-value pairs |
+| `ingredients` | `string \| null` | No | Ingredients list (cosmetics, food, supplements only) |
+| `specs` | `object \| null` | No | 5-7 key technical specifications as key-value pairs |
 | `currency_code` | `string \| null` | No | ISO 4217 currency code (e.g., `"USD"`, `"EUR"`) |
 | `sku` | `string \| null` | No | Product SKU or identifier |
 | `availability` | `string \| null` | No | Stock status: `InStock`, `OutOfStock`, `PreOrder`, `BackOrder`, `LimitedAvailability` |
@@ -166,20 +185,11 @@ All settings are configured via environment variables (or `.env` file):
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | Your [OpenRouter](https://openrouter.ai) API key |
-| `LLM_MODEL` | No | `google/gemini-2.5-flash-lite` | OpenRouter model ID ([browse models](https://openrouter.ai/models)) |
+| `LLM_MODEL` | No | `google/gemini-3-flash-preview` | OpenRouter model ID ([browse models](https://openrouter.ai/models)) |
 | `LLM_MAX_TOKENS` | No | `4096` | Maximum tokens for LLM response |
 | `BROWSER_TIMEOUT` | No | `45000` | Page load timeout in milliseconds |
 | `HOST` | No | `0.0.0.0` | Server bind address |
 | `PORT` | No | `8080` | Server port |
-
-### Recommended Models
-
-| Model | OpenRouter ID | Cost (per 1M tokens) | Notes |
-|-------|--------------|----------------------|-------|
-| Gemini 2.5 Flash Lite | `google/gemini-2.5-flash-lite` | ~$0.25 / $1.50 | Best value, fast |
-| Gemini 3 Flash | `google/gemini-3-flash-preview` | ~$0.50 / $3.00 | Higher quality |
-| Claude Haiku 4.5 | `anthropic/claude-haiku-4.5` | $1 / $5 | Reliable, more expensive |
-| Llama 3.3 70B | `meta-llama/llama-3.3-70b-instruct:free` | Free | Rate-limited (200 req/day) |
 
 ## Architecture
 
@@ -194,6 +204,14 @@ The extraction prompt uses a **source priority system** to maximize accuracy:
 5. **Meta description** — often contains a clean product summary
 6. **Page text** (lowest priority) — richest but noisiest source; used for benefits, specs, and filling gaps
 
+### Anti-Detection
+
+The browser module includes multiple anti-detection measures:
+- **playwright-stealth** — patches common bot detection signals
+- **Realistic headers** — Accept-Language, Sec-Fetch-*, Upgrade-Insecure-Requests
+- **navigator.webdriver patch** — removes automation flag
+- **domcontentloaded + delay** — avoids `networkidle` timeouts on heavy sites
+
 ### HTML Cleaning
 
 Before sending to the LLM, HTML is processed to reduce noise and token usage:
@@ -201,19 +219,19 @@ Before sending to the LLM, HTML is processed to reduce noise and token usage:
 - Text is extracted and deduplicated
 - Content is truncated to ~40,000 characters
 - JSON-LD is capped at 5,000 characters
-- Image URLs are deduplicated, noise-filtered (logos, icons, trackers excluded), and limited to 15
+- Images are collected from JSON-LD, srcset, and img tags; noise-filtered and limited to 10 candidates
 
 ### Error Handling
 
 - **Browser errors** (timeout, HTTP 4xx/5xx) return `400` with details
 - **LLM extraction failures** are retried up to 2 times before returning `500`
-- **Validation errors** (invalid LLM output) trigger retries with the same prompt
+- **Rate limiting** (429) and server errors (5xx) from OpenRouter trigger exponential backoff (2s, 4s, 8s)
+- **Null coercion** — LLM returning `null` for required string fields is auto-corrected to empty string
 
 ## Limitations
 
-- **Bot detection** — Anti-detection measures (stealth mode, realistic headers) handle most sites, but some heavily protected sites may still block or return CAPTCHAs.
+- **Bot detection** — Anti-detection measures handle most sites (Amazon, Shopify, Google Store work well), but some heavily protected sites may still block or return CAPTCHAs.
 - **Heavy pages** — Uses `domcontentloaded` wait strategy with a short JS rendering delay; most pages load within the 45s default timeout.
-- **Rate limits** — Free OpenRouter models are limited to ~20 requests/minute and 200 requests/day.
 - **Accuracy** — LLM extraction is not 100% deterministic. Edge cases (multi-variant products, bundle pages, non-standard layouts) may produce imperfect results.
 
 ## Usage Example (Python)
