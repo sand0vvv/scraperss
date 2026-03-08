@@ -34,7 +34,7 @@ description — A concise 2-4 sentence summary capturing what the product is, wh
 
 key_benefits — 3-7 specific, concrete benefits. Extract from bullet points, feature lists, or product description. Each benefit should be a short phrase, not a full sentence. If the page lists no explicit benefits, infer the most important ones from features and description. Never pad with generic filler ("High quality", "Great value").
 
-price — The current selling price including currency symbol, exactly as displayed (e.g., "$29.99", "49,90 EUR"). If there is a sale/discount, use the discounted price. If price is a range, use the starting price with a "from" prefix (e.g., "from $19.99"). If free, return "Free". If no price is found on the page, return empty string.
+price — The current selling price including currency symbol, exactly as displayed (e.g., "$29.99", "49,90 EUR"). Check these sources in order: JSON-LD "offers.price" or "offers.lowPrice", microdata "price", then SCAN the page text for price patterns (dollar/euro/pound signs followed by numbers). On Amazon, look for the main displayed price near the product title, ignoring "list price" or "was" prices (those go in price_original). If there is a sale/discount, use the discounted price. If price is a range, use the starting price with a "from" prefix (e.g., "from $19.99"). If free, return "Free". Return empty string ONLY if you are certain no price appears anywhere in the provided data.
 
 price_original — The original price before any discount or sale, including currency symbol (e.g., "$39.99"). Return null if there is no discount or if the original price is the same as the current price.
 
@@ -42,21 +42,25 @@ currency_code — ISO 4217 currency code (e.g., "USD", "EUR", "GBP"). Extract fr
 
 sku — The product's SKU, MPN, or primary identifier code. Check JSON-LD "sku" or "mpn", microdata "sku", or product detail sections. Return null if not found.
 
-availability — Product availability status. Use one of: "InStock", "OutOfStock", "PreOrder", "BackOrder", "LimitedAvailability". Check JSON-LD "availability" or microdata "availability" first. Return null if not determinable.
+availability — Product availability status. Use one of: "InStock", "OutOfStock", "PreOrder", "BackOrder", "LimitedAvailability". Check JSON-LD "offers.availability" or microdata "availability" first. Note: JSON-LD often stores this as a full URL like "https://schema.org/InStock" — extract just the final segment (e.g., "InStock"). Also check page text for phrases like "In Stock", "Out of Stock", "Currently unavailable", "Pre-order". Return null only if no availability signal exists anywhere in the data.
 
 rating — Numeric average rating (e.g., 4.5). Check JSON-LD "aggregateRating.ratingValue" or microdata "ratingValue". Return null if no rating exists.
 
 review_count — Total number of reviews as an integer. Check JSON-LD "aggregateRating.reviewCount" or microdata "reviewCount". Return null if not available.
 
-product_images — The 2-3 BEST product photo URLs only. Pick the hero/main product image first, then 1-2 alternate angles if available. Exclude: logos, icons, banners, UI elements, payment badges, lifestyle/marketing shots, decorative graphics. Prefer images from JSON-LD "image" field. Absolutely no more than 3 URLs.
+product_images — Return exactly 2-3 product photo URLs. You MUST return at least 2 images if any product images exist on the page. Strategy: (1) Start with JSON-LD "image" field — this often contains multiple product images in an array. (2) Add the OG image if different. (3) Fill remaining slots from the Image URLs list, picking the largest/highest-resolution versions (prefer URLs containing "large", "zoom", "1024", "2048"; avoid "thumb", "small", "_SR38", "_AC_US40_"). Exclude: logos, icons, banners, UI elements, payment badges, decorative graphics. Maximum 3 URLs.
 
-category — A specific product category describing what this item IS, at the level a shopper would use (e.g., "Wireless Headphones", "Face Moisturizer", "Running Shoes", "Espresso Machine"). Not too broad ("Electronics") and not too narrow.
+category — A specific product category describing what this item IS, at the level a shopper would use (e.g., "Wireless Headphones", "Facial Serum", "Running Shoes", "Espresso Machine"). Derive the category from the product name and page content — if the product name says "serum", the category must reflect that, not a different product type. Check JSON-LD "@type" or "category" fields and breadcrumb navigation for hints. Not too broad ("Electronics") and not too narrow ("Red Running Shoes Size 10").
 
 target_audience — Who this product is designed for, if the page makes it clear (e.g., "professional photographers", "people with sensitive skin"). Return null if the page does not indicate a specific audience.
 
-ingredients — Ingredients or composition list as a single string. ONLY for products that are consumed or applied to the body: food, drinks, cosmetics, skincare, supplements, medicine. Return null for EVERYTHING else — clothing, electronics, furniture, accessories, shoes, bags, etc. Fabric composition (e.g., "65% Nylon, 35% Polyester") is NOT ingredients — put that in specs under "Material".
+ingredients — The COMPLETE ingredients or composition list as a single comma-separated string, exactly as listed on the page (e.g., the full INCI list for cosmetics, full nutrition ingredients for food). Do NOT abbreviate to just active/hero ingredients — include every ingredient in the list. ONLY for products that are consumed or applied to the body: food, drinks, cosmetics, skincare, supplements, medicine. Return null for EVERYTHING else — clothing, electronics, furniture, accessories, shoes, bags, etc. Fabric composition (e.g., "65% Nylon, 35% Polyester") is NOT ingredients — put that in specs under "Material".
 
-specs — The 5-7 MOST IMPORTANT technical specifications as a flat object with string keys and string values. Focus on specs a buyer cares about most: size/dimensions, weight, material/fabric, color, capacity, key technical features. Keep values concise (not paragraphs). Skip exhaustive compatibility lists, regulatory info, box contents, and manufacturer codes. Return null if no specs are found.
+specs — Exactly 5-7 of the MOST IMPORTANT technical specifications as a flat object. Never exceed 7 entries. Focus on what a buyer cares about most: size/dimensions, weight, material/fabric, color, capacity, key technical features. Each value must be under 80 characters — if longer, shorten to the essential fact (e.g., "Up to 6 hours, 30 hours with case" not a paragraph). Use short key names (e.g., "Battery Life", "Weight", "Material", "Color", "Connectivity"). Skip compatibility lists, regulatory info, box contents, and manufacturer codes. Return null if no specs are found.
+
+SITE-SPECIFIC HINTS:
+- Amazon: Price is often in JSON-LD "offers.price" or in page text near "$XX.XX" patterns. Availability is in JSON-LD "offers.availability" as a full URL like "https://schema.org/InStock" — extract just "InStock". Product images are in JSON-LD "image" array; prefer URLs containing "/images/I/" — these are full-size. Ignore thumbnails with "_SR38" or "_AC_US40_" in the URL.
+- Shopify stores (Gymshark, Bombas, etc.): JSON-LD is usually comprehensive. Product images are in JSON-LD "image" array with multiple variants. Look for "cdn.shopify.com" URLs at their largest resolution.
 
 CRITICAL CONSTRAINTS:
 - Extract ONLY information present on the page. Never fabricate data.
