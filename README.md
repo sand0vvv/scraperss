@@ -118,11 +118,6 @@ Scrape a product page and return structured data.
   ],
   "price": "$6.00",
   "price_original": null,
-  "currency_code": "USD",
-  "sku": "rdn-niacinamide-10pct-zinc-1pct-30ml",
-  "availability": "InStock",
-  "rating": null,
-  "review_count": null,
   "product_images": [
     "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dwce8a7cdf/Images/products/The%20Ordinary/rdn-niacinamide-10pct-zinc-1pct-30ml.png",
     "https://theordinary.com/dw/image/v2/BFKJ_PRD/on/demandware.static/-/Sites-deciem-master/default/dw51b196c5/Images/products/The%20Ordinary/application/ord-niacinamide-10-zic-1-model-application-with-benefits.jpg",
@@ -171,11 +166,6 @@ Scrape a product page and return structured data.
 | `target_audience` | `string \| null` | No | Target audience, if identifiable |
 | `ingredients` | `string \| null` | No | Ingredients list (cosmetics, food, supplements only) |
 | `specs` | `object \| null` | No | 5-7 key technical specifications as key-value pairs |
-| `currency_code` | `string \| null` | No | ISO 4217 currency code (e.g., `"USD"`, `"EUR"`) |
-| `sku` | `string \| null` | No | Product SKU or identifier |
-| `availability` | `string \| null` | No | Stock status: `InStock`, `OutOfStock`, `PreOrder`, `BackOrder`, `LimitedAvailability` |
-| `rating` | `number \| null` | No | Average rating (e.g., `4.5`) |
-| `review_count` | `integer \| null` | No | Total number of reviews |
 | `price_original` | `string \| null` | No | Original price before discount (e.g., `"$39.99"`) |
 
 ## Configuration
@@ -198,7 +188,7 @@ All settings are configured via environment variables (or `.env` file):
 The extraction prompt uses a **source priority system** to maximize accuracy:
 
 1. **JSON-LD** (highest priority) — structured data embedded by the site; most reliable for name, brand, price
-2. **Microdata** — schema.org `itemprop` attributes; reliable for SKU, brand, rating, availability
+2. **Microdata** — schema.org `itemprop` attributes; reliable for brand, price
 3. **Open Graph tags** — reliable for title, description, primary image
 4. **Twitter Card tags** — fallback for title, description, image
 5. **Meta description** — often contains a clean product summary

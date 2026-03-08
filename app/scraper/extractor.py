@@ -17,7 +17,7 @@ You are a product data extraction system. You receive pre-parsed webpage data (m
 
 DATA SOURCE PRIORITY (most to least reliable):
 1. JSON-LD — structured data embedded by the site; use as primary source for name, brand, price, description, images
-2. Microdata — schema.org itemprop attributes; reliable for sku, brand, price, rating, availability
+2. Microdata — schema.org itemprop attributes; reliable for brand, price
 3. Open Graph tags — reliable for title, description, primary image
 4. Twitter Card tags — fallback for title, description, image
 5. Meta description — often a clean product summary
@@ -38,16 +38,6 @@ price — The current selling price including currency symbol, exactly as displa
 
 price_original — The original price before any discount or sale, including currency symbol (e.g., "$39.99"). Return null if there is no discount or if the original price is the same as the current price.
 
-currency_code — ISO 4217 currency code (e.g., "USD", "EUR", "GBP"). Extract from JSON-LD priceCurrency, microdata priceCurrency, or infer from the currency symbol in the price. Return null if not determinable.
-
-sku — The product's SKU, MPN, or primary identifier code. Check JSON-LD "sku" or "mpn", microdata "sku", or product detail sections. Return null if not found.
-
-availability — Product availability status. Use one of: "InStock", "OutOfStock", "PreOrder", "BackOrder", "LimitedAvailability". Check JSON-LD "offers.availability" or microdata "availability" first. Note: JSON-LD often stores this as a full URL like "https://schema.org/InStock" — extract just the final segment (e.g., "InStock"). Also check page text for phrases like "In Stock", "Out of Stock", "Currently unavailable", "Pre-order". Return null only if no availability signal exists anywhere in the data.
-
-rating — Numeric average rating (e.g., 4.5). Check JSON-LD "aggregateRating.ratingValue" or microdata "ratingValue". Return null if no rating exists.
-
-review_count — Total number of reviews as an integer. Check JSON-LD "aggregateRating.reviewCount" or microdata "reviewCount". Return null if not available.
-
 product_images — Return exactly 2-3 product photo URLs. You MUST return at least 2 images if any product images exist on the page. Strategy: (1) Start with JSON-LD "image" field — this often contains multiple product images in an array. (2) Add the OG image if different. (3) Fill remaining slots from the Image URLs list, picking the largest/highest-resolution versions (prefer URLs containing "large", "zoom", "1024", "2048"; avoid "thumb", "small", "_SR38", "_AC_US40_"). Exclude: logos, icons, banners, UI elements, payment badges, decorative graphics. Maximum 3 URLs.
 
 category — A specific product category describing what this item IS, at the level a shopper would use (e.g., "Wireless Headphones", "Facial Serum", "Running Shoes", "Espresso Machine"). Derive the category from the product name and page content — if the product name says "serum", the category must reflect that, not a different product type. Check JSON-LD "@type" or "category" fields and breadcrumb navigation for hints. Not too broad ("Electronics") and not too narrow ("Red Running Shoes Size 10").
@@ -59,7 +49,7 @@ ingredients — The COMPLETE ingredients or composition list as a single comma-s
 specs — Exactly 5-7 of the MOST IMPORTANT technical specifications as a flat object. Never exceed 7 entries. Focus on what a buyer cares about most: size/dimensions, weight, material/fabric, color, capacity, key technical features. Each value must be under 80 characters — if longer, shorten to the essential fact (e.g., "Up to 6 hours, 30 hours with case" not a paragraph). Use short key names (e.g., "Battery Life", "Weight", "Material", "Color", "Connectivity"). Skip compatibility lists, regulatory info, box contents, and manufacturer codes. Return null if no specs are found.
 
 SITE-SPECIFIC HINTS:
-- Amazon: Price is often in JSON-LD "offers.price" or in page text near "$XX.XX" patterns. Availability is in JSON-LD "offers.availability" as a full URL like "https://schema.org/InStock" — extract just "InStock". Product images are in JSON-LD "image" array; prefer URLs containing "/images/I/" — these are full-size. Ignore thumbnails with "_SR38" or "_AC_US40_" in the URL.
+- Amazon: Price is often in JSON-LD "offers.price" or in page text near "$XX.XX" patterns. Product images are in JSON-LD "image" array; prefer URLs containing "/images/I/" — these are full-size. Ignore thumbnails with "_SR38" or "_AC_US40_" in the URL.
 - Shopify stores (Gymshark, Bombas, etc.): JSON-LD is usually comprehensive. Product images are in JSON-LD "image" array with multiple variants. Look for "cdn.shopify.com" URLs at their largest resolution.
 
 CRITICAL CONSTRAINTS:
@@ -70,7 +60,7 @@ CRITICAL CONSTRAINTS:
 - For required string fields with no data, use empty string. For optional fields, use null.
 
 REQUIRED JSON STRUCTURE:
-{"product_name": string, "brand_name": string, "description": string, "key_benefits": [string, ...], "price": string, "price_original": string or null, "currency_code": string or null, "sku": string or null, "availability": string or null, "rating": number or null, "review_count": integer or null, "product_images": [string, ...], "category": string, "target_audience": string or null, "ingredients": string or null, "specs": {"key": "value", ...} or null}"""
+{"product_name": string, "brand_name": string, "description": string, "key_benefits": [string, ...], "price": string, "price_original": string or null, "product_images": [string, ...], "category": string, "target_audience": string or null, "ingredients": string or null, "specs": {"key": "value", ...} or null}"""
 
 
 def _build_user_message(parsed: ParsedPage, url: str) -> str:
