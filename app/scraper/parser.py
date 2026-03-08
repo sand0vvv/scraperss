@@ -93,7 +93,7 @@ def parse_html(html: str, page_title: str, base_url: str) -> ParsedPage:
         if absolute_url not in seen_urls:
             seen_urls.add(absolute_url)
             result.image_urls.append(absolute_url)
-        if len(result.image_urls) >= 15:
+        if len(result.image_urls) >= 10:
             break
 
     # Clean text — remove scripts, styles, nav, footer, then extract text

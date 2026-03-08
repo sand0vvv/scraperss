@@ -48,15 +48,15 @@ rating — Numeric average rating (e.g., 4.5). Check JSON-LD "aggregateRating.ra
 
 review_count — Total number of reviews as an integer. Check JSON-LD "aggregateRating.reviewCount" or microdata "reviewCount". Return null if not available.
 
-product_images — URLs of actual product photos only. Maximum 10. Exclude: logos, icons, banners, UI elements, payment badges, social media icons, decorative graphics, tracking pixels. When the same image appears in multiple sizes, keep only the largest version. Prefer images from JSON-LD "image" field.
+product_images — The 2-3 BEST product photo URLs only. Pick the hero/main product image first, then 1-2 alternate angles if available. Exclude: logos, icons, banners, UI elements, payment badges, lifestyle/marketing shots, decorative graphics. Prefer images from JSON-LD "image" field. Absolutely no more than 3 URLs.
 
 category — A specific product category describing what this item IS, at the level a shopper would use (e.g., "Wireless Headphones", "Face Moisturizer", "Running Shoes", "Espresso Machine"). Not too broad ("Electronics") and not too narrow.
 
 target_audience — Who this product is designed for, if the page makes it clear (e.g., "professional photographers", "people with sensitive skin"). Return null if the page does not indicate a specific audience.
 
-ingredients — Ingredients or composition list as a single string, applicable to food, cosmetics, supplements, and similar products. Return null for products where ingredients do not apply (electronics, clothing, furniture, etc.). Do not put technical specs or materials here.
+ingredients — Ingredients or composition list as a single string. ONLY for products that are consumed or applied to the body: food, drinks, cosmetics, skincare, supplements, medicine. Return null for EVERYTHING else — clothing, electronics, furniture, accessories, shoes, bags, etc. Fabric composition (e.g., "65% Nylon, 35% Polyester") is NOT ingredients — put that in specs under "Material".
 
-specs — Key technical specifications as a flat object with string keys and string values. Extract from spec tables, feature lists, or product details sections. Include dimensions, weight, materials, compatibility, capacity, and similar factual attributes. Return null if no specs are found.
+specs — The 5-7 MOST IMPORTANT technical specifications as a flat object with string keys and string values. Focus on specs a buyer cares about most: size/dimensions, weight, material/fabric, color, capacity, key technical features. Keep values concise (not paragraphs). Skip exhaustive compatibility lists, regulatory info, box contents, and manufacturer codes. Return null if no specs are found.
 
 CRITICAL CONSTRAINTS:
 - Extract ONLY information present on the page. Never fabricate data.
@@ -96,7 +96,7 @@ def _build_user_message(parsed: ParsedPage, url: str) -> str:
         parts.append(f"Microdata (schema.org):\n{json.dumps(parsed.microdata, indent=2)}")
 
     if parsed.image_urls:
-        parts.append(f"Image URLs:\n" + "\n".join(parsed.image_urls[:15]))
+        parts.append(f"Image URLs:\n" + "\n".join(parsed.image_urls[:10]))
 
     parts.append(f"Page Text:\n{parsed.cleaned_text}")
 
