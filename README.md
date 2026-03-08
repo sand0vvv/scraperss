@@ -192,7 +192,8 @@ The extraction prompt uses a **source priority system** to maximize accuracy:
 3. **Open Graph tags** — reliable for title, description, primary image
 4. **Twitter Card tags** — fallback for title, description, image
 5. **Meta description** — often contains a clean product summary
-6. **Page text** (lowest priority) — richest but noisiest source; used for benefits, specs, and filling gaps
+6. **Page text** — richest but noisiest source; used for benefits, specs, and filling gaps
+7. **Image URLs** (lowest priority) — heavily filtered; most are not product images
 
 ### Anti-Detection
 
