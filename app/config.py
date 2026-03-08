@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     openrouter_api_key: str = ""
     browser_timeout: int = 45000
-    llm_model: str = "anthropic/claude-haiku-4.5"
+    llm_model: str = "google/gemini-3-flash-preview"
     llm_max_tokens: int = 4096
     host: str = "0.0.0.0"
     port: int = 8080
